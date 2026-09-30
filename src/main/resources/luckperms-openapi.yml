@@ -434,7 +434,12 @@ paths:
           description: Missing required information
         '404':
           description: User doesn't exist
-      description: Override the users nodes
+      description: |-
+        Override the users nodes.
+
+        All existing nodes are removed, including the `group.default` inheritance node. As every user
+        always resolves to a primary group, the user falls back to the default group if the request
+        doesn't set a new one.
       requestBody:
         content:
           application/json:
@@ -737,7 +742,7 @@ paths:
         '400':
           description: Missing required information
         '404':
-          description: User doesn't exist
+          description: User or group doesn't exist
       description: Add the user to a group. Responds with the updated list of groups.
       requestBody:
         content:
@@ -1550,7 +1555,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/LogBroadcastEvent'
                   required:
@@ -1561,7 +1566,12 @@ paths:
                   value: |
                     event: message
                     data: '{"entry":{"timestamp":1658428395,"source":{"uniqueId":"c1d60c50-70b5-4722-8057-87767557e50d","name":"Luck"},"target":{"uniqueId":"c1d60c50-70b5-4722-8057-87767557e50d","name":"Luck","type":"user"},"description":"permission set minecraft.command.ban true"},"origin":"local"}'
-      description: Subscribes to the LogBroadcastEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the LogBroadcastEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /event/post-network-sync:
@@ -1581,7 +1591,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/PostNetworkSyncEvent'
                   required:
@@ -1592,7 +1602,12 @@ paths:
                   value: |
                     event: message
                     data: '{"syncId":"8ff071c2-f772-4c16-a5d2-17a401d4e2f1","type":"specific_user","didSyncOccur":true,"specificUserUniqueId":"c1d60c50-70b5-4722-8057-87767557e50d"}'
-      description: Subscribes to the PostNetworkSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the PostNetworkSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /event/post-sync:
@@ -1612,7 +1627,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/PostSyncEvent'
                   required:
@@ -1623,7 +1638,12 @@ paths:
                   value: |
                     event: message
                     data: '{}'
-      description: Subscribes to the PostSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the PostSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /event/pre-network-sync:
@@ -1643,7 +1663,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/PreNetworkSyncEvent'
                   required:
@@ -1654,7 +1674,12 @@ paths:
                   value: |
                     event: message
                     data: '{"syncId":"8ff071c2-f772-4c16-a5d2-17a401d4e2f1","type":"specific_user","specificUserUniqueId":"c1d60c50-70b5-4722-8057-87767557e50d"}'
-      description: Subscribes to the PreNetworkSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the PreNetworkSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /event/pre-sync:
@@ -1674,7 +1699,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/PreSyncEvent'
                   required:
@@ -1685,7 +1710,12 @@ paths:
                   value: |
                     event: message
                     data: '{}'
-      description: Subscribes to the PreSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the PreSyncEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /event/custom-message-receive:
@@ -1705,7 +1735,7 @@ paths:
                   properties:
                     event:
                       type: string
-                      enum: [message]
+                      enum: [message, ping]
                     data:
                       $ref: '#/components/schemas/CustomMessageReceiveEvent'
                   required:
@@ -1716,7 +1746,12 @@ paths:
                   value: |
                     event: message
                     data: '{"channelId": "superranks:notifications", "payload": "custom payload message goes here"}'
-      description: Subscribes to the CustomMessageReceiveEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)
+                example-2:
+                  value: |
+                    event: ping
+                    data: 1
+      description: Subscribes to the CustomMessageReceiveEvent using [Server-Sent Events (SSE)](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events).
+        A `ping` event is sent every 10 seconds to keep the connection alive.
       tags:
         - Events
   /health:
@@ -1907,6 +1942,10 @@ components:
           type: string
           minLength: 1
           example: Luck
+          description: |-
+            The username of the user.
+
+            Usernames are normalised to lower case by the platform.
         parentGroups:
           type: array
           items:
@@ -2269,7 +2308,7 @@ components:
       properties:
         outcomes:
           type: array
-          description: if the app is healthy
+          description: the outcomes of the operation
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PlayerSaveResultOutcome'

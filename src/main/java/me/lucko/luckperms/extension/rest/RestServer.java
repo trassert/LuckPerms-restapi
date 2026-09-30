@@ -134,7 +134,7 @@ public class RestServer implements AutoCloseable {
 
         MessagingService messagingService = luckPerms.getMessagingService().orElse(StubMessagingService.INSTANCE);
 
-        UserController userController = new UserController(luckPerms.getUserManager(), luckPerms.getTrackManager(), messagingService, this.objectMapper, restConfig.isUserCacheEnabled());
+        UserController userController = new UserController(luckPerms.getUserManager(), luckPerms.getGroupManager(), luckPerms.getTrackManager(), messagingService, this.objectMapper, restConfig.isUserCacheEnabled());
         GroupController groupController = new GroupController(luckPerms.getGroupManager(), messagingService, this.objectMapper, restConfig.isGroupCacheEnabled());
         TrackController trackController = new TrackController(luckPerms.getTrackManager(), luckPerms.getGroupManager(), messagingService, this.objectMapper, restConfig.isTrackCacheEnabled());
         ActionController actionController = new ActionController(luckPerms.getActionLogger(), this.objectMapper);

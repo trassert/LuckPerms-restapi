@@ -40,7 +40,7 @@ public class HealthSerializer extends JsonSerializer<Health> {
         gen.writePOJO(Model.from(value));
     }
 
-    record Model(boolean healthy, Map<String, Object> details) {
+    record Model(boolean health, Map<String, Object> details) {
         static Model from(Health health) {
             return new Model(
                     health.isHealthy(),

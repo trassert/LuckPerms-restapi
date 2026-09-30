@@ -45,6 +45,7 @@ import net.luckperms.api.model.PermissionHolder;
 import net.luckperms.api.model.PlayerSaveResult;
 import net.luckperms.api.model.data.TemporaryNodeMergeStrategy;
 import net.luckperms.api.model.group.Group;
+import net.luckperms.api.model.group.GroupManager;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.model.user.UserManager;
 import net.luckperms.api.node.Node;
@@ -66,12 +67,14 @@ public class UserController implements PermissionHolderController {
     private final boolean cache;
 
     private final UserManager userManager;
+    private final GroupManager groupManager;
     private final TrackManager trackManager;
     private final MessagingService messagingService;
     private final ObjectMapper objectMapper;
 
-    public UserController(UserManager userManager, TrackManager trackManager, MessagingService messagingService, ObjectMapper objectMapper, boolean cache) {
+    public UserController(UserManager userManager, GroupManager groupManager, TrackManager trackManager, MessagingService messagingService, ObjectMapper objectMapper, boolean cache) {
         this.userManager = userManager;
+        this.groupManager = groupManager;
         this.trackManager = trackManager;
         this.messagingService = messagingService;
         this.objectMapper = objectMapper;
@@ -94,7 +97,7 @@ public class UserController implements PermissionHolderController {
     /**
      * Resolves the {@code id} path parameter, which accepts either a unique id (UUID) or a username.
      *
-     * @return a future completing with the unique id, or completing exceptionally if the username is unknown
+     * @return a future completing with the unique id, or completing exceptionally if the user is unknown
      */
     private CompletableFuture<UUID> pathParamAsUniqueId(Context ctx) throws JsonProcessingException {
         String id = ctx.pathParam("id");
@@ -104,15 +107,39 @@ public class UserController implements PermissionHolderController {
 
         UUID uniqueId = tryParseUuid(id);
         if (uniqueId != null) {
-            return CompletableFuture.completedFuture(uniqueId);
+            return knownUniqueId(uniqueId, id);
         }
 
-        return this.userManager.lookupUniqueId(id).thenApply(lookedUp -> {
+        return this.userManager.lookupUniqueId(id).thenCompose(lookedUp -> {
             if (lookedUp == null) {
                 throw new UnsupportedOperationException("Unknown user: " + id);
             }
-            return lookedUp;
+            return knownUniqueId(lookedUp, id);
         });
+    }
+
+    /**
+     * Fails the request if the unique id doesn't belong to a user known to the platform.
+     *
+     * <p>This check is required because {@link UserManager#loadUser(UUID)} creates (but doesn't save) a
+     * user if none exists yet, and because looking up an unknown username yields a freshly derived unique
+     * id - without this check, both cases would be served as if they were existing users.</p>
+     */
+    private CompletableFuture<UUID> knownUniqueId(UUID uniqueId, String id) {
+        return userExists(uniqueId).thenApply(exists -> {
+            if (!exists) {
+                throw new UnsupportedOperationException("Unknown user: " + id);
+            }
+            return uniqueId;
+        });
+    }
+
+    private CompletableFuture<Boolean> userExists(UUID uniqueId) {
+        if (this.userManager.isLoaded(uniqueId)) {
+            return CompletableFuture.completedFuture(true);
+        }
+        return this.userManager.lookupUsername(uniqueId)
+                .thenApply(username -> username != null && !username.isEmpty());
     }
 
     /**
@@ -212,7 +239,7 @@ public class UserController implements PermissionHolderController {
     public void get(Context ctx) throws JsonProcessingException {
         ctx.future(loadUserByPathParam(ctx), result -> {
             if (result == null) {
-                ctx.status(404);
+                ctx.status(404).result("User doesn't exist");
             } else {
                 ctx.json(result);
             }
@@ -257,7 +284,7 @@ public class UserController implements PermissionHolderController {
         CompletableFuture<Collection<Node>> future = loadUserByPathParam(ctx).thenApply(PermissionHolder::getNodes);
         ctx.future(future, result -> {
             if (result == null) {
-                ctx.status(404);
+                ctx.status(404).result("User doesn't exist");
             } else {
                 ctx.json(result);
             }
@@ -409,7 +436,7 @@ public class UserController implements PermissionHolderController {
 
         ctx.future(future, result -> {
             if (result == null) {
-                ctx.status(404);
+                ctx.status(404).result("Track doesn't exist");
             } else {
                 ctx.json(result);
             }
@@ -441,7 +468,7 @@ public class UserController implements PermissionHolderController {
 
         ctx.future(future, result -> {
             if (result == null) {
-                ctx.status(404);
+                ctx.status(404).result("Track doesn't exist");
             } else {
                 ctx.json(result);
             }
@@ -458,14 +485,23 @@ public class UserController implements PermissionHolderController {
         GroupReq body = ctx.bodyAsClass(GroupReq.class);
         Node node = inheritanceNode(body);
 
-        CompletableFuture<List<String>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
+        CompletableFuture<List<String>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> loadGroup(body.group()).thenCompose(group -> {
+            if (group == null) {
+                return CompletableFuture.completedFuture(null);
+            }
             user.data().add(node);
             return this.userManager.saveUser(user).thenApply(v -> {
                 this.messagingService.pushUserUpdate(user);
                 return getGroupNames(user);
             });
+        }));
+        ctx.future(future, result -> {
+            if (result == null) {
+                ctx.status(404).result("Group doesn't exist");
+            } else {
+                ctx.json(result);
+            }
         });
-        ctx.future(future);
     }
 
     // DELETE /user/{id}/delgroup
@@ -487,6 +523,15 @@ public class UserController implements PermissionHolderController {
             @JsonProperty(required = true) String group,
             ContextSet context
     ) { }
+
+    /**
+     * Loads the group referenced by the request, so that it can be checked for existence before it's used.
+     *
+     * @return a future completing with the group, or with {@code null} if it doesn't exist
+     */
+    private CompletableFuture<Group> loadGroup(String name) {
+        return this.groupManager.loadGroup(name).thenApply(opt -> opt.orElse(null));
+    }
 
     private static Node inheritanceNode(GroupReq req) {
         if (req.group() == null || req.group().isEmpty()) {

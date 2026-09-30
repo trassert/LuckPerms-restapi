@@ -31,8 +31,11 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import net.luckperms.api.model.PlayerSaveResult;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class PlayerSaveResultSerializer extends JsonSerializer<PlayerSaveResult> {
 
@@ -41,10 +44,12 @@ public class PlayerSaveResultSerializer extends JsonSerializer<PlayerSaveResult>
         gen.writePOJO(Model.from(value));
     }
 
-    record Model(Set<PlayerSaveResult.Outcome> outcomes, String previousUsername, Set<UUID> otherUniqueIds) {
+    record Model(Set<String> outcomes, String previousUsername, Set<UUID> otherUniqueIds) {
         static Model from(PlayerSaveResult result) {
             return new Model(
-                    result.getOutcomes(),
+                    result.getOutcomes().stream()
+                            .map(outcome -> outcome.name().toLowerCase(Locale.ROOT))
+                            .collect(Collectors.toCollection(LinkedHashSet::new)),
                     result.getPreviousUsername(),
                     result.getOtherUniqueIds()
             );
