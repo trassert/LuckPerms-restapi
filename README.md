@@ -1,60 +1,26 @@
 # LuckPerms REST API
 
-A REST API for LuckPerms.
+REST API for LuckPerms as a Paper plugin.
 
-* [API Specification](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/LuckPerms/rest-api/main/src/main/resources/luckperms-openapi.yml)
+## Installation
 
-## Information
+1. Build with `mvn package`.
+2. Copy `target/luckperms-rest-api.jar` to the server `plugins` directory.
+3. Make sure LuckPerms is installed.
+4. Edit `plugins/LuckPermsRestApi/config.yml` and restart the server.
 
-* The REST API is bundled as a LuckPerms "[extension](https://luckperms.net/wiki/Extensions)".
-* We suggest that you run the rest-api as a standalone application within a Docker container. (see below)
-* The API is still a work in progress. Please submit bugs/suggestions in the issues section!
-
-## Usage (Docker)
-
-1. Copy the example [docker-compose.yml](docker/docker-compose.yml) file to somewhere sensible.
-2. Open the file and configure your database host/credentials
-3. Run `docker compose up -d`
-4. The API is now accessible (by default) at `http://127.0.0.1:8080`.
-
-## Usage (Manual)
-
-1. Clone the repository
-2. Compile with Gradle (`./gradlew build`)
-3. Add `luckperms-rest-api-v1.jar` to the LuckPerms extension folder (`/data/extensions/`).
-4. The API is now accessible (by default) at `http://localhost:8080`.
+The API listens on `http://localhost:8080` by default.
+The OpenAPI schema is available at `http://localhost:8080/docs/openapi`.
 
 ## Configuration
 
-The app can be configured using Java system properties or environment variables.
-
-| Environment Variable          | Description                                                    | Default Value |
-|-------------------------------|----------------------------------------------------------------|---------------|
-| `LUCKPERMS_REST_HTTP_PORT`    | The port that the HTTP server should listen on                 | `8080`        | 
-| `LUCKPERMS_REST_AUTH`         | If API key authorization is enabled                            | `false`       |
-| `LUCKPERMS_REST_AUTH_KEYS`    | A comma-separated list of accepted API keys                    | *none*        |
-| `LUCKPERMS_REST_CACHE_USERS`  | If the cache<sup>*</sup> should be used for user GET requests  | `true`        |
-| `LUCKPERMS_REST_CACHE_GROUPS` | If the cache<sup>*</sup> should be used for group GET requests | `true`        |
-
-**<sup>*</sup>** When a [messaging service](https://luckperms.net/wiki/Syncing-data-between-servers#messaging-services) is configured (recommended), the cache will be invalidated automatically whenever data is changed by other LP instances.
-
-## Security
-
-By default, the example Docker Compose setup only makes the API available to applications running on the host machine.
-For this reason, authentication is disabled by default.
-
-However, if you decide to make the API available over a wider network (e.g. the internet), then it is crucial that **you configure authentication using API keys** and enable HTTPS by exposing the API behind a reverse proxy (e.g. nginx).
-
-You enable auth by setting `LUCKPERMS_REST_AUTH` to true, and setting `LUCKPERMS_REST_AUTH_KEYS` to a comma separated list of allowed API keys.
-
-e.g.
-```yml
-LUCKPERMS_REST_AUTH: "true"
-LUCKPERMS_REST_AUTH_KEYS: "myverysecureapikey,anotherverysecurekey"
+```yaml
+http-port: 8080
+auth: false
+auth-keys: ''
+cache-users: true
+cache-groups: true
+cache-tracks: true
 ```
 
-Once enabled, API keys should be sent as a `Bearer` token inside the `Authorization` header of API requests.
-e.g. 
-```
-Authorization: Bearer myverysecureapikey
-```
+When `auth` is enabled, provide comma-separated API keys in `auth-keys` and send them as `Authorization: Bearer <key>`.
