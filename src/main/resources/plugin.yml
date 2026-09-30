@@ -1,0 +1,5 @@
+name: LuckPermsRestApi
+version: '${project.version}'
+main: me.lucko.luckperms.extension.rest.RestPlugin
+api-version: '26.1'
+depend: [LuckPerms]

@@ -1,0 +1,6 @@
+http-port: 8080
+auth: false
+auth-keys: ''
+cache-users: true
+cache-groups: true
+cache-tracks: true
