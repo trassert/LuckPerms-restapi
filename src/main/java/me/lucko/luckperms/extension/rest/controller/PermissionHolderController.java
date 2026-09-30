@@ -72,9 +72,13 @@ public interface PermissionHolderController {
     void permissionCheckCustom(Context ctx) throws Exception;
 
     // POST /<type>/{id}/promote
-    void promote(Context ctx) throws Exception;
+    default void promote(Context ctx) throws Exception {
+        throw new UnsupportedOperationException();
+    }
 
     // POST /<type>/{id}/demote
-    void demote(Context ctx) throws Exception;
+    default void demote(Context ctx) throws Exception {
+        throw new UnsupportedOperationException();
+    }
 
 }

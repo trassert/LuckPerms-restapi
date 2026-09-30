@@ -30,7 +30,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.Context;
-import me.lucko.luckperms.extension.rest.RestConfig;
 import me.lucko.luckperms.extension.rest.model.GroupSearchResult;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckRequest;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckResult;
@@ -52,25 +51,25 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 public class TrackController {
-    private static final boolean CACHE = RestConfig.getBoolean("cache.tracks", true);
+    private final boolean cache;
 
     private final TrackManager trackManager;
     private final GroupManager groupManager;
     private final MessagingService messagingService;
     private final ObjectMapper objectMapper;
 
-    public TrackController(TrackManager trackManager, GroupManager groupManager, MessagingService messagingService, ObjectMapper objectMapper) {
+    public TrackController(TrackManager trackManager, GroupManager groupManager, MessagingService messagingService, ObjectMapper objectMapper, boolean cache) {
         this.trackManager = trackManager;
         this.groupManager = groupManager;
         this.messagingService = messagingService;
         this.objectMapper = objectMapper;
+        this.cache = cache;
     }
 
     private CompletableFuture<Track> loadTrackCached(String name) {
-        if (CACHE) {
+        if (this.cache) {
             return CompletableFuture.completedFuture(this.trackManager.getTrack(name));
         } else {
             return this.trackManager.loadTrack(name).thenApply(opt -> opt.orElse(null));
@@ -78,7 +77,7 @@ public class TrackController {
     }
 
     private CompletableFuture<Set<Track>> loadTracksCached() {
-        if (CACHE) {
+        if (this.cache) {
             return CompletableFuture.completedFuture(this.trackManager.getLoadedTracks());
         } else {
             return this.trackManager.loadAllTracks().thenApply(x -> this.trackManager.getLoadedTracks());
@@ -105,7 +104,7 @@ public class TrackController {
         CompletableFuture<List<String>> future = loadTracksCached()
                 .thenApply(tracks -> tracks.stream()
                         .map(Track::getName)
-                        .collect(Collectors.toList())
+                        .toList()
                 );
         ctx.future(future);
     }

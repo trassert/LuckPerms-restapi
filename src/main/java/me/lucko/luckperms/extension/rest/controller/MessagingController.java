@@ -53,8 +53,27 @@ public class MessagingController {
         return this.objectMapper.readValue(uuidString, UUID.class);
     }
 
-    private UUID pathParamAsUuid(Context ctx) throws JsonProcessingException {
-        return parseUuid(ctx.pathParam("id"));
+    /**
+     * Resolves the {@code id} path parameter, which accepts either a unique id (UUID) or a username.
+     *
+     * @return a future completing with the unique id, or completing exceptionally if the username is unknown
+     */
+    private CompletableFuture<UUID> pathParamAsUniqueId(Context ctx) throws JsonProcessingException {
+        String id = ctx.pathParam("id");
+        if (id == null || id.isEmpty()) {
+            throw new IllegalArgumentException("Must specify a unique id or username");
+        }
+
+        try {
+            return CompletableFuture.completedFuture(parseUuid(id));
+        } catch (JsonProcessingException e) {
+            return this.userManager.lookupUniqueId(id).thenApply(lookedUp -> {
+                if (lookedUp == null) {
+                    throw new UnsupportedOperationException("Unknown user: " + id);
+                }
+                return lookedUp;
+            });
+        }
     }
 
     // POST /update
@@ -75,12 +94,12 @@ public class MessagingController {
             return;
         }
 
-        UUID uniqueId = pathParamAsUuid(ctx);
-
-        User u = this.userManager.getUser(uniqueId);
-        CompletableFuture<User> userFuture = u != null
-                ? CompletableFuture.completedFuture(u)
-                : this.userManager.loadUser(uniqueId);
+        CompletableFuture<User> userFuture = pathParamAsUniqueId(ctx).thenCompose(uniqueId -> {
+            User u = this.userManager.getUser(uniqueId);
+            return u != null
+                    ? CompletableFuture.completedFuture(u)
+                    : this.userManager.loadUser(uniqueId);
+        });
 
         ctx.future(userFuture.thenAccept(user -> {
             if (user != null) {

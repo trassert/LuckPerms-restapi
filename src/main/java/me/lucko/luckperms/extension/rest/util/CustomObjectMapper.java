@@ -71,9 +71,9 @@ import net.luckperms.api.track.Track;
 
 public class CustomObjectMapper extends ObjectMapper {
 
+    @SuppressWarnings("deprecation")
     public CustomObjectMapper() {
 
-        //noinspection deprecation
         this.enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
         this.setSerializationInclusion(JsonInclude.Include.NON_NULL);
 

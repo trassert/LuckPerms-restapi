@@ -30,7 +30,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.Context;
-import me.lucko.luckperms.extension.rest.RestConfig;
 import me.lucko.luckperms.extension.rest.model.GroupSearchResult;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckRequest;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckResult;
@@ -49,23 +48,23 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 public class GroupController implements PermissionHolderController {
-    private static final boolean CACHE = RestConfig.getBoolean("cache.groups", true);
+    private final boolean cache;
 
     private final GroupManager groupManager;
     private final MessagingService messagingService;
     private final ObjectMapper objectMapper;
 
-    public GroupController(GroupManager groupManager, MessagingService messagingService, ObjectMapper objectMapper) {
+    public GroupController(GroupManager groupManager, MessagingService messagingService, ObjectMapper objectMapper, boolean cache) {
         this.groupManager = groupManager;
         this.messagingService = messagingService;
         this.objectMapper = objectMapper;
+        this.cache = cache;
     }
 
     private CompletableFuture<Group> loadGroupCached(String name) {
-        if (CACHE) {
+        if (this.cache) {
             return CompletableFuture.completedFuture(this.groupManager.getGroup(name));
         } else {
             return this.groupManager.loadGroup(name).thenApply(opt -> opt.orElse(null));
@@ -73,7 +72,7 @@ public class GroupController implements PermissionHolderController {
     }
 
     private CompletableFuture<Set<Group>> loadGroupsCached() {
-        if (CACHE) {
+        if (this.cache) {
             return CompletableFuture.completedFuture(this.groupManager.getLoadedGroups());
         } else {
             return this.groupManager.loadAllGroups().thenApply(x -> this.groupManager.getLoadedGroups());
@@ -102,7 +101,7 @@ public class GroupController implements PermissionHolderController {
         CompletableFuture<List<String>> future = loadGroupsCached()
                 .thenApply(groups -> groups.stream()
                         .map(Group::getName)
-                        .collect(Collectors.toList())
+                        .toList()
                 );
         ctx.future(future);
     }
@@ -367,15 +366,4 @@ public class GroupController implements PermissionHolderController {
         });
     }
 
-    // POST /group/{id}/promote
-    @Override
-    public void promote(Context ctx) throws Exception {
-        throw new UnsupportedOperationException();
-    }
-
-    // POST /group/{id}/demote
-    @Override
-    public void demote(Context ctx) throws Exception {
-        throw new UnsupportedOperationException();
-    }
 }

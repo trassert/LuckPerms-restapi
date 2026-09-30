@@ -28,7 +28,6 @@ package me.lucko.luckperms.extension.rest.util;
 import io.javalin.core.JavalinConfig;
 import io.javalin.plugin.openapi.OpenApiOptions;
 import io.javalin.plugin.openapi.OpenApiPlugin;
-import io.javalin.plugin.openapi.ui.SwaggerOptions;
 import io.swagger.v3.oas.models.OpenAPI;
 import me.lucko.luckperms.extension.rest.RestServer;
 
@@ -46,10 +45,7 @@ public class SwaggerUi {
 
         // configure the javalin handler
         OpenApiOptions opts = new OpenApiOptions(OpenAPI::new)
-                .path("openapi")
-                .swagger(new SwaggerOptions("/docs/swagger-ui")
-                        .title("LuckPerms API")
-                );
+                .path("openapi");
         config.registerPlugin(new OpenApiPlugin(opts));
     }
 

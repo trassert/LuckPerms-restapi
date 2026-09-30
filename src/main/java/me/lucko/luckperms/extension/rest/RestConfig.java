@@ -25,50 +25,45 @@
 
 package me.lucko.luckperms.extension.rest;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 
 public class RestConfig {
 
-    public static String getString(String path, String defaultValue) {
-        String sysProperty = "luckperms.rest." + path;
-        String envVariable = sysProperty.toUpperCase(Locale.ROOT).replace('.', '_');
+    private final org.bukkit.configuration.file.FileConfiguration config;
 
-        String value = System.getProperty(sysProperty, System.getenv(envVariable));
-        if (value != null) {
-            return value;
-        } else {
-            return defaultValue;
-        }
+    public RestConfig(org.bukkit.configuration.file.FileConfiguration config) {
+        this.config = config;
     }
 
-    public static boolean getBoolean(String path, boolean defaultValue) {
-        String value = getString(path, null);
-        if (value != null) {
-            return Boolean.parseBoolean(value);
-        } else {
-            return defaultValue;
-        }
+    public int getHttpPort() {
+        return this.config.getInt("http-port", 8080);
     }
 
-
-    public static int getInteger(String path, int defaultValue) {
-        String value = getString(path, null);
-        if (value != null) {
-            return Integer.parseInt(value);
-        } else {
-            return defaultValue;
-        }
+    public boolean isAuthEnabled() {
+        return this.config.getBoolean("auth", false);
     }
 
-    public static List<String> getStringList(String path, List<String> defaultValue) {
-        String value = getString(path, null);
-        if (value != null) {
-            return Arrays.asList(value.split(","));
-        } else {
-            return defaultValue;
+    public List<String> getAuthKeys() {
+        String value = this.config.getString("auth-keys", "");
+        if (value.isBlank()) {
+            return List.of();
         }
+        return java.util.Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(key -> !key.isEmpty())
+                .toList();
+    }
+
+    public boolean isUserCacheEnabled() {
+        return this.config.getBoolean("cache-users", true);
+    }
+
+    public boolean isGroupCacheEnabled() {
+        return this.config.getBoolean("cache-groups", true);
+    }
+
+    public boolean isTrackCacheEnabled() {
+        return this.config.getBoolean("cache-tracks", true);
     }
 
 }

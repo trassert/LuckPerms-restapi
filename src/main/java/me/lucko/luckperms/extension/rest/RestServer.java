@@ -51,7 +51,6 @@ import net.luckperms.api.platform.Health;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.Set;
 
 import static io.javalin.apibuilder.ApiBuilder.delete;
@@ -71,20 +70,22 @@ public class RestServer implements AutoCloseable {
     private final ObjectMapper objectMapper;
     private final Javalin app;
     private final AutoCloseable routesClosable;
+    private final RestConfig restConfig;
 
-    public RestServer(LuckPerms luckPerms, String address, int port) {
+    public RestServer(LuckPerms luckPerms, RestConfig restConfig) {
         LOGGER.info("[REST] Starting server...");
+        this.restConfig = restConfig;
 
         this.objectMapper = new CustomObjectMapper();
 
         this.app = Javalin.create(this::configure)
-                .start(address, port);
+            .start(null, restConfig.getHttpPort());
 
         this.setupLogging(this.app);
         this.setupErrorHandlers(this.app);
-        this.routesClosable = this.setupRoutes(this.app, luckPerms);
+        this.routesClosable = this.setupRoutes(this.app, luckPerms, restConfig);
 
-        LOGGER.info("[REST] Startup complete! Listening on http://{}:{}", address == null ? "localhost" : address, port);
+        LOGGER.info("[REST] Startup complete! Listening on http://localhost:{}", restConfig.getHttpPort());
     }
 
     @Override
@@ -104,7 +105,7 @@ public class RestServer implements AutoCloseable {
         JavalinLogger.startupInfo = false;
         OpenApiVersionUtil.INSTANCE.setLogWarnings(false);
 
-        this.setupAuth(config);
+        this.setupAuth(config, this.restConfig);
 
         SwaggerUi.setup(config);
 
@@ -123,8 +124,8 @@ public class RestServer implements AutoCloseable {
         });
     }
 
-    private AutoCloseable setupRoutes(Javalin app, LuckPerms luckPerms) {
-        app.get("/", ctx -> ctx.redirect("/docs/swagger-ui"));
+    private AutoCloseable setupRoutes(Javalin app, LuckPerms luckPerms, RestConfig restConfig) {
+        app.get("/", ctx -> ctx.redirect("/docs/openapi"));
 
         app.get("health", ctx -> {
             Health health = luckPerms.runHealthCheck();
@@ -133,9 +134,9 @@ public class RestServer implements AutoCloseable {
 
         MessagingService messagingService = luckPerms.getMessagingService().orElse(StubMessagingService.INSTANCE);
 
-        UserController userController = new UserController(luckPerms.getUserManager(), luckPerms.getTrackManager(), messagingService, this.objectMapper);
-        GroupController groupController = new GroupController(luckPerms.getGroupManager(), messagingService, this.objectMapper);
-        TrackController trackController = new TrackController(luckPerms.getTrackManager(), luckPerms.getGroupManager(), messagingService, this.objectMapper);
+        UserController userController = new UserController(luckPerms.getUserManager(), luckPerms.getTrackManager(), messagingService, this.objectMapper, restConfig.isUserCacheEnabled());
+        GroupController groupController = new GroupController(luckPerms.getGroupManager(), messagingService, this.objectMapper, restConfig.isGroupCacheEnabled());
+        TrackController trackController = new TrackController(luckPerms.getTrackManager(), luckPerms.getGroupManager(), messagingService, this.objectMapper, restConfig.isTrackCacheEnabled());
         ActionController actionController = new ActionController(luckPerms.getActionLogger(), this.objectMapper);
         MessagingController messagingController = new MessagingController(luckPerms.getMessagingService().orElse(null), luckPerms.getUserManager(), this.objectMapper);
         EventController eventController = new EventController(luckPerms.getEventBus());
@@ -143,7 +144,11 @@ public class RestServer implements AutoCloseable {
         app.routes(() -> {
             path("user", () -> {
                 get("lookup", userController::lookup);
-                setupControllerRoutes(userController);
+                setupControllerRoutes(userController, () -> {
+                    get("getgroup", userController::groupGet);
+                    post("addgroup", userController::groupAdd);
+                    delete("delgroup", userController::groupDelete);
+                });
             });
             path("group", () -> setupControllerRoutes(groupController));
             path("track", () -> setupControllerRoutes(trackController));
@@ -156,6 +161,14 @@ public class RestServer implements AutoCloseable {
     }
 
     private void setupControllerRoutes(PermissionHolderController controller) {
+        setupControllerRoutes(controller, () -> { });
+    }
+
+    /**
+     * @param extraIdRoutes additional routes registered under the {@code {id}} path, for controllers
+     *                     which support endpoints that are specific to their own type
+     */
+    private void setupControllerRoutes(PermissionHolderController controller, Runnable extraIdRoutes) {
         post(controller::create);
         get(controller::getAll);
 
@@ -180,13 +193,11 @@ public class RestServer implements AutoCloseable {
                 get(controller::permissionCheck);
                 post(controller::permissionCheckCustom);
             });
-            path("permissioncheck", () -> {
-                get(controller::permissionCheck);
-                post(controller::permissionCheckCustom);
-            });
 
             post("promote", controller::promote);
             post("demote", controller::demote);
+
+            extraIdRoutes.run();
         });
     }
 
@@ -223,11 +234,9 @@ public class RestServer implements AutoCloseable {
         sse("custom-message-receive", controller::customMessageReceive);
     }
 
-    private void setupAuth(JavalinConfig config) {
-        if (RestConfig.getBoolean("auth", false)) {
-            Set<String> keys = ImmutableSet.copyOf(
-                    RestConfig.getStringList("auth.keys", Collections.emptyList())
-            );
+    private void setupAuth(JavalinConfig config, RestConfig restConfig) {
+        if (restConfig.isAuthEnabled()) {
+            Set<String> keys = ImmutableSet.copyOf(restConfig.getAuthKeys());
 
             if (keys.isEmpty()) {
                 LOGGER.warn("[REST] Auth is enabled but there are no API keys registered!");

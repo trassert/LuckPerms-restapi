@@ -30,7 +30,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.http.Context;
-import me.lucko.luckperms.extension.rest.RestConfig;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckRequest;
 import me.lucko.luckperms.extension.rest.model.PermissionCheckResult;
 import me.lucko.luckperms.extension.rest.model.SearchRequest;
@@ -45,9 +44,11 @@ import net.luckperms.api.messaging.MessagingService;
 import net.luckperms.api.model.PermissionHolder;
 import net.luckperms.api.model.PlayerSaveResult;
 import net.luckperms.api.model.data.TemporaryNodeMergeStrategy;
+import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.model.user.UserManager;
 import net.luckperms.api.node.Node;
+import net.luckperms.api.node.NodeBuilder;
 import net.luckperms.api.node.matcher.NodeMatcher;
 import net.luckperms.api.query.QueryOptions;
 import net.luckperms.api.track.DemotionResult;
@@ -62,18 +63,19 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class UserController implements PermissionHolderController {
-    private static final boolean CACHE = RestConfig.getBoolean("cache.users", true);
+    private final boolean cache;
 
     private final UserManager userManager;
     private final TrackManager trackManager;
     private final MessagingService messagingService;
     private final ObjectMapper objectMapper;
 
-    public UserController(UserManager userManager, TrackManager trackManager, MessagingService messagingService, ObjectMapper objectMapper) {
+    public UserController(UserManager userManager, TrackManager trackManager, MessagingService messagingService, ObjectMapper objectMapper, boolean cache) {
         this.userManager = userManager;
         this.trackManager = trackManager;
         this.messagingService = messagingService;
         this.objectMapper = objectMapper;
+        this.cache = cache;
     }
 
     private UUID parseUuid(String s) throws JsonProcessingException {
@@ -81,12 +83,55 @@ public class UserController implements PermissionHolderController {
         return this.objectMapper.readValue(uuidString, UUID.class);
     }
 
-    private UUID pathParamAsUuid(Context ctx) throws JsonProcessingException {
-        return parseUuid(ctx.pathParam("id"));
+    private UUID tryParseUuid(String s) {
+        try {
+            return parseUuid(s);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves the {@code id} path parameter, which accepts either a unique id (UUID) or a username.
+     *
+     * @return a future completing with the unique id, or completing exceptionally if the username is unknown
+     */
+    private CompletableFuture<UUID> pathParamAsUniqueId(Context ctx) throws JsonProcessingException {
+        String id = ctx.pathParam("id");
+        if (id == null || id.isEmpty()) {
+            throw new IllegalArgumentException("Must specify a unique id or username");
+        }
+
+        UUID uniqueId = tryParseUuid(id);
+        if (uniqueId != null) {
+            return CompletableFuture.completedFuture(uniqueId);
+        }
+
+        return this.userManager.lookupUniqueId(id).thenApply(lookedUp -> {
+            if (lookedUp == null) {
+                throw new UnsupportedOperationException("Unknown user: " + id);
+            }
+            return lookedUp;
+        });
+    }
+
+    /**
+     * Loads the user referenced by the {@code id} path parameter, using the cache if it is enabled.
+     */
+    private CompletableFuture<User> loadUserByPathParam(Context ctx) throws JsonProcessingException {
+        return pathParamAsUniqueId(ctx).thenCompose(this::loadUserCached);
+    }
+
+    /**
+     * Loads the user referenced by the {@code id} path parameter from the storage, bypassing the cache.
+     * This must be used before mutating a user, to avoid losing data written elsewhere.
+     */
+    private CompletableFuture<User> loadUserFromStorageByPathParam(Context ctx) throws JsonProcessingException {
+        return pathParamAsUniqueId(ctx).thenCompose(uniqueId -> this.userManager.loadUser(uniqueId));
     }
 
     private CompletableFuture<User> loadUserCached(UUID uniqueId) {
-        if (CACHE) {
+        if (this.cache) {
             User user = this.userManager.getUser(uniqueId);
             if (user != null) {
                 return CompletableFuture.completedFuture(user);
@@ -165,8 +210,7 @@ public class UserController implements PermissionHolderController {
     // GET /user/{id}
     @Override
     public void get(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
-        ctx.future(loadUserCached(uniqueId), result -> {
+        ctx.future(loadUserByPathParam(ctx), result -> {
             if (result == null) {
                 ctx.status(404);
             } else {
@@ -178,9 +222,9 @@ public class UserController implements PermissionHolderController {
     // PATCH /user/{id}
     @Override
     public void update(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
+        CompletableFuture<UUID> uniqueIdFuture = pathParamAsUniqueId(ctx);
         UpdateReq body = ctx.bodyAsClass(UpdateReq.class);
-        ctx.future(this.userManager.savePlayerData(uniqueId, body.username), result -> ctx.result("ok"));
+        ctx.future(uniqueIdFuture.thenCompose(uniqueId -> this.userManager.savePlayerData(uniqueId, body.username)), result -> ctx.result("ok"));
     }
 
     record UpdateReq(@JsonProperty(required = true) String username) { }
@@ -188,20 +232,20 @@ public class UserController implements PermissionHolderController {
     // DELETE /user/{id}
     @Override
     public void delete(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
+        CompletableFuture<UUID> uniqueIdFuture = pathParamAsUniqueId(ctx);
         boolean playerDataOnly = ctx.queryParamAsClass("playerDataOnly", Boolean.class).getOrDefault(false);
 
         CompletableFuture<Void> future;
         if (playerDataOnly) {
-            future = this.userManager.deletePlayerData(uniqueId);
+            future = uniqueIdFuture.thenCompose(uniqueId -> this.userManager.deletePlayerData(uniqueId));
         } else {
-            future = this.userManager.loadUser(uniqueId).thenCompose(user -> {
+            future = uniqueIdFuture.thenCompose(uniqueId -> this.userManager.loadUser(uniqueId).thenCompose(user -> {
                 user.data().clear();
                 return this.userManager.saveUser(user).thenCompose(ignored -> {
                     this.messagingService.pushUserUpdate(user);
                     return this.userManager.deletePlayerData(uniqueId);
                 });
-            });
+            }));
         }
 
         ctx.future(future, result -> ctx.result("ok"));
@@ -210,8 +254,7 @@ public class UserController implements PermissionHolderController {
     // GET /user/{id}/nodes
     @Override
     public void nodesGet(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
-        CompletableFuture<Collection<Node>> future = loadUserCached(uniqueId).thenApply(PermissionHolder::getNodes);
+        CompletableFuture<Collection<Node>> future = loadUserByPathParam(ctx).thenApply(PermissionHolder::getNodes);
         ctx.future(future, result -> {
             if (result == null) {
                 ctx.status(404);
@@ -224,11 +267,10 @@ public class UserController implements PermissionHolderController {
     // PATCH /user/{id}/nodes
     @Override
     public void nodesAddMultiple(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         List<Node> nodes = this.objectMapper.readValue(ctx.body(), new TypeReference<>(){});
         TemporaryNodeMergeStrategy mergeStrategy = ParamUtils.queryParamAsTemporaryNodeMergeStrategy(this.objectMapper, ctx);
 
-        CompletableFuture<Collection<Node>> future = this.userManager.loadUser(uniqueId).thenCompose(user -> {
+        CompletableFuture<Collection<Node>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
             for (Node node : nodes) {
                 user.data().add(node, mergeStrategy);
             }
@@ -244,12 +286,11 @@ public class UserController implements PermissionHolderController {
     // DELETE /user/{id}/nodes
     @Override
     public void nodesDeleteAll(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         List<Node> nodes = ctx.body().isEmpty()
                 ? null
                 : this.objectMapper.readValue(ctx.body(), new TypeReference<>(){});
 
-        CompletableFuture<?> future = this.userManager.loadUser(uniqueId).thenCompose(user -> {
+        CompletableFuture<?> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
             if (nodes == null) {
                 user.data().clear();
             } else {
@@ -268,11 +309,10 @@ public class UserController implements PermissionHolderController {
     // POST /user/{id}/nodes
     @Override
     public void nodesAddSingle(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         Node node = ctx.bodyAsClass(Node.class);
         TemporaryNodeMergeStrategy mergeStrategy = ParamUtils.queryParamAsTemporaryNodeMergeStrategy(this.objectMapper, ctx);
 
-        CompletableFuture<Collection<Node>> future = this.userManager.loadUser(uniqueId).thenCompose(user -> {
+        CompletableFuture<Collection<Node>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
             user.data().add(node, mergeStrategy);
             return this.userManager.saveUser(user).thenApply(v -> {
                 this.messagingService.pushUserUpdate(user);
@@ -285,10 +325,9 @@ public class UserController implements PermissionHolderController {
     // PUT /user/{id}/nodes
     @Override
     public void nodesSet(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         List<Node> nodes = this.objectMapper.readValue(ctx.body(), new TypeReference<>(){});
 
-        CompletableFuture<Collection<Node>> future = this.userManager.loadUser(uniqueId).thenCompose(user -> {
+        CompletableFuture<Collection<Node>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
             user.data().clear();
             for (Node node : nodes) {
                 user.data().add(node);
@@ -304,8 +343,7 @@ public class UserController implements PermissionHolderController {
     // GET /user/{id}/meta
     @Override
     public void metaGet(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
-        CompletableFuture<CachedMetaData> future = loadUserCached(uniqueId)
+        CompletableFuture<CachedMetaData> future = loadUserByPathParam(ctx)
                 .thenApply(user -> user.getCachedData().getMetaData());
         ctx.future(future);
     }
@@ -313,13 +351,12 @@ public class UserController implements PermissionHolderController {
     // GET /user/{id}/permission-check
     @Override
     public void permissionCheck(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         String permission = ctx.queryParam("permission");
         if (permission == null || permission.isEmpty()) {
             throw new IllegalArgumentException("Missing permission");
         }
 
-        CompletableFuture<PermissionCheckResult> future = loadUserCached(uniqueId)
+        CompletableFuture<PermissionCheckResult> future = loadUserByPathParam(ctx)
                 .thenApply(user -> user.getCachedData().getPermissionData().queryPermission(permission))
                 .thenApply(PermissionCheckResult::from);
 
@@ -329,13 +366,12 @@ public class UserController implements PermissionHolderController {
     // POST /user/{id}/permission-check
     @Override
     public void permissionCheckCustom(Context ctx) throws JsonProcessingException {
-        UUID uniqueId = pathParamAsUuid(ctx);
         PermissionCheckRequest req = ctx.bodyAsClass(PermissionCheckRequest.class);
         if (req.permission() == null || req.permission().isEmpty()) {
             throw new IllegalArgumentException("Missing permission");
         }
 
-        CompletableFuture<PermissionCheckResult> future = this.userManager.loadUser(uniqueId)
+        CompletableFuture<PermissionCheckResult> future = loadUserFromStorageByPathParam(ctx)
                 .thenApply(user -> {
                     QueryOptions options = req.queryOptions();
                     if (options == null) {
@@ -351,7 +387,7 @@ public class UserController implements PermissionHolderController {
     // POST /user/{id}/promote
     @Override
     public void promote(Context ctx) throws Exception {
-        UUID uniqueId = pathParamAsUuid(ctx);
+        CompletableFuture<User> userFuture = loadUserFromStorageByPathParam(ctx);
         TrackRequest req = ctx.bodyAsClass(TrackRequest.class);
         if (req.track() == null || req.track().isEmpty()) {
             throw new IllegalArgumentException("Missing track");
@@ -362,7 +398,7 @@ public class UserController implements PermissionHolderController {
         CompletableFuture<PromotionResult> future = this.trackManager.loadTrack(req.track()).thenCompose(opt -> {
             if (opt.isPresent()) {
                 Track track = opt.get();
-                return this.userManager.loadUser(uniqueId).thenCompose(user -> {
+                return userFuture.thenCompose(user -> {
                     PromotionResult result = track.promote(user, context);
                     return this.userManager.saveUser(user).thenApply(x -> result);
                 });
@@ -383,7 +419,7 @@ public class UserController implements PermissionHolderController {
     // POST /user/{id}/demote
     @Override
     public void demote(Context ctx) throws Exception {
-        UUID uniqueId = pathParamAsUuid(ctx);
+        CompletableFuture<User> userFuture = loadUserFromStorageByPathParam(ctx);
         TrackRequest req = ctx.bodyAsClass(TrackRequest.class);
         if (req.track() == null || req.track().isEmpty()) {
             throw new IllegalArgumentException("Missing track");
@@ -394,7 +430,7 @@ public class UserController implements PermissionHolderController {
         CompletableFuture<DemotionResult> future = this.trackManager.loadTrack(req.track()).thenCompose(opt -> {
             if (opt.isPresent()) {
                 Track track = opt.get();
-                return this.userManager.loadUser(uniqueId).thenCompose(user -> {
+                return userFuture.thenCompose(user -> {
                     DemotionResult result = track.demote(user, context);
                     return this.userManager.saveUser(user).thenApply(x -> result);
                 });
@@ -410,5 +446,70 @@ public class UserController implements PermissionHolderController {
                 ctx.json(result);
             }
         });
+    }
+
+    // GET /user/{id}/getgroup
+    public void groupGet(Context ctx) throws JsonProcessingException {
+        ctx.future(loadUserByPathParam(ctx).thenApply(UserController::getGroupNames));
+    }
+
+    // POST /user/{id}/addgroup
+    public void groupAdd(Context ctx) throws JsonProcessingException {
+        GroupReq body = ctx.bodyAsClass(GroupReq.class);
+        Node node = inheritanceNode(body);
+
+        CompletableFuture<List<String>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
+            user.data().add(node);
+            return this.userManager.saveUser(user).thenApply(v -> {
+                this.messagingService.pushUserUpdate(user);
+                return getGroupNames(user);
+            });
+        });
+        ctx.future(future);
+    }
+
+    // DELETE /user/{id}/delgroup
+    public void groupDelete(Context ctx) throws JsonProcessingException {
+        GroupReq body = ctx.bodyAsClass(GroupReq.class);
+        Node node = inheritanceNode(body);
+
+        CompletableFuture<List<String>> future = loadUserFromStorageByPathParam(ctx).thenCompose(user -> {
+            user.data().remove(node);
+            return this.userManager.saveUser(user).thenApply(v -> {
+                this.messagingService.pushUserUpdate(user);
+                return getGroupNames(user);
+            });
+        });
+        ctx.future(future);
+    }
+
+    record GroupReq(
+            @JsonProperty(required = true) String group,
+            ContextSet context
+    ) { }
+
+    private static Node inheritanceNode(GroupReq req) {
+        if (req.group() == null || req.group().isEmpty()) {
+            throw new IllegalArgumentException("Missing group");
+        }
+
+        NodeBuilder<?, ?> builder = Node.builder("group." + req.group())
+                .value(true);
+        if (req.context() != null) {
+            builder.context(req.context());
+        }
+        return builder.build();
+    }
+
+    /**
+     * Gets the names of every group the user inherits from, ignoring contexts so that contextual
+     * memberships are included too.
+     */
+    private static List<String> getGroupNames(User user) {
+        return user.getInheritedGroups(QueryOptions.contextual(ImmutableContextSet.empty()))
+                .stream()
+                .map(Group::getName)
+                .sorted()
+                .toList();
     }
 }
