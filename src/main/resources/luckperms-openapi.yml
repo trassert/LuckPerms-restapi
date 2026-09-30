@@ -677,6 +677,130 @@ paths:
                   context:
                     - key: server
                       value: survival
+  '/user/{uniqueId}/getgroup':
+    parameters:
+      - $ref: '#/components/parameters/uniqueId'
+    get:
+      summary: Get the groups a user belongs to
+      operationId: get-user-groups
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                uniqueItems: true
+                items:
+                  $ref: '#/components/schemas/GroupName'
+              examples:
+                example-1:
+                  value:
+                    - default
+                    - staff
+                    - vip
+        '400':
+          description: Missing required information
+        '404':
+          description: User doesn't exist
+      description: |-
+        Get the names of every group the user belongs to.
+
+        Groups are resolved using the user's own nodes as well as the nodes of the groups it inherits from, and
+        contextual group memberships are included too.
+  '/user/{uniqueId}/addgroup':
+    parameters:
+      - $ref: '#/components/parameters/uniqueId'
+    post:
+      summary: Add a user to a group
+      operationId: post-user-addgroup
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                uniqueItems: true
+                items:
+                  $ref: '#/components/schemas/GroupName'
+              examples:
+                example-1:
+                  value:
+                    - default
+                    - staff
+                    - vip
+        '400':
+          description: Missing required information
+        '404':
+          description: User doesn't exist
+      description: Add the user to a group. Responds with the updated list of groups.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupRequest'
+            examples:
+              example-1:
+                value:
+                  group: vip
+              example-2:
+                value:
+                  group: staff
+                  context:
+                    - key: server
+                      value: survival
+  '/user/{uniqueId}/delgroup':
+    parameters:
+      - $ref: '#/components/parameters/uniqueId'
+    delete:
+      summary: Remove a user from a group
+      operationId: delete-user-delgroup
+      tags:
+        - Users
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema:
+                type: array
+                uniqueItems: true
+                items:
+                  $ref: '#/components/schemas/GroupName'
+              examples:
+                example-1:
+                  value:
+                    - default
+                    - staff
+        '400':
+          description: Missing required information
+        '404':
+          description: User doesn't exist
+      description: |-
+        Remove the user from a group. Responds with the updated list of groups.
+
+        The group must be given with the exact same context it was added with, otherwise the membership will not be
+        removed.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupRequest'
+            examples:
+              example-1:
+                value:
+                  group: vip
+              example-2:
+                value:
+                  group: staff
+                  context:
+                    - key: server
+                      value: survival
   /group:
     get:
       summary: Get all existing groups
@@ -1848,6 +1972,14 @@ components:
       example: c1d60c50-70b5-4722-8057-87767557e50d
       format: uuid
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    UserIdentifier:
+      type: string
+      title: User Identifier
+      description: A player identifier. Either a unique id (UUID) or a username.
+      example: c1d60c50-70b5-4722-8057-87767557e50d
+      x-examples:
+        example-1: c1d60c50-70b5-4722-8057-87767557e50d
+        example-2: Luck
     GroupName:
       type: string
       title: Name
@@ -2075,6 +2207,20 @@ components:
         example-1:
           track: staff
       description: A request to promote or demote a user along a track.
+    GroupRequest:
+      title: GroupRequest
+      type: object
+      properties:
+        group:
+          $ref: '#/components/schemas/GroupName'
+        context:
+          $ref: '#/components/schemas/ContextSet'
+      required:
+        - group
+      x-examples:
+        example-1:
+          group: vip
+      description: A request to add or remove a user from a group.
     UserSearchResult:
       title: UserSearchResult
       type: object
@@ -2295,9 +2441,13 @@ components:
       name: uniqueId
       in: path
       schema:
-        $ref: '#/components/schemas/UniqueId'
+        $ref: '#/components/schemas/UserIdentifier'
       required: true
-      description: A player unique id (UUID)
+      description: |-
+        A player identifier.
+
+        Either a unique id (UUID), or a username. If the value isn't a UUID, it's looked up as a username, and a
+        `404` is returned if no user has it.
     groupName:
       name: groupName
       in: path
