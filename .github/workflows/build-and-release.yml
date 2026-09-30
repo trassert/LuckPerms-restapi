@@ -1,0 +1,161 @@
+name: Сборка и публикация
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read 
+
+jobs:
+  extract-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+      artifact_name: ${{ steps.get_artifact_name.outputs.ARTIFACT_NAME }}
+      tag_exists: ${{ steps.check_tag.outputs.TAG_EXISTS }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "temurin"
+
+      - name: Get Maven version
+        id: get_version
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout | grep -v '^\[' | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "Error: Could not determine version"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Get artifact name
+        id: get_artifact_name
+        run: |
+          ARTIFACT_NAME=$(mvn help:evaluate -Dexpression=project.artifactId -q -DforceStdout | grep -v '^\[' | tr -d '[:space:]')
+          if [ -z "$ARTIFACT_NAME" ]; then
+            echo "Error: Could not determine artifact name"
+            exit 1
+          fi
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "Detected artifact name: $ARTIFACT_NAME"
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${{ steps.get_version.outputs.VERSION }}" >/dev/null 2>&1; then
+            echo "TAG_EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: extract-version
+    runs-on: ubuntu-latest
+    if: needs.extract-version.outputs.tag_exists == 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: "25"
+          distribution: "temurin"
+
+      - name: Build
+        run: mvn -q clean package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ needs.extract-version.outputs.artifact_name }}-v${{ needs.extract-version.outputs.version }}
+          path: target/*.jar
+
+  create-tag:
+    needs: [extract-version, build]
+    runs-on: ubuntu-latest
+    if: needs.extract-version.outputs.tag_exists == 'false'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Create tag
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "v${{ needs.extract-version.outputs.version }}" -m "Release v${{ needs.extract-version.outputs.version }}"
+          git push origin "v${{ needs.extract-version.outputs.version }}"
+
+  release:
+    needs: [extract-version, create-tag]
+    runs-on: ubuntu-latest
+    if: needs.extract-version.outputs.tag_exists == 'false'
+    outputs:
+      changelog: ${{ steps.generate_changelog.outputs.CHANGELOG }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog with commit links
+        id: generate_changelog
+        run: |
+          REPO="${{ github.repository }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 --exclude="v${{ needs.extract-version.outputs.version }}" HEAD~1 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline --no-decorate)
+          else
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --oneline --no-decorate)
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            CHANGELOG="Нет изменений"
+          else
+            while IFS= read -r line; do
+              if [ -n "$line" ]; then
+                COMMIT_HASH=$(echo "$line" | cut -d' ' -f1)
+                COMMIT_MSG=$(echo "$line" | cut -d' ' -f2-)
+                echo "- [$COMMIT_HASH](https://github.com/$REPO/commit/$COMMIT_HASH) $COMMIT_MSG"
+              fi
+            done <<< "$COMMITS" > /tmp/changelog.md
+            CHANGELOG=$(cat /tmp/changelog.md)
+          fi
+
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Download artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.extract-version.outputs.artifact_name }}-v${{ needs.extract-version.outputs.version }}
+
+      - name: Remove original-*.jar
+        run: find . -name "original-*.jar" -delete
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.extract-version.outputs.version }}
+          name: v${{ needs.extract-version.outputs.version }}
+          body: ${{ steps.generate_changelog.outputs.CHANGELOG }}
+          files: "**/*.jar"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
