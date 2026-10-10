@@ -2,8 +2,8 @@
 
 <p align="center">
 <a href=https://t.me/lumintoch><img src=https://img.shields.io/badge/Sponsored%20by-Luminto-purple?style=for-the-badge&logo=githubsponsors&logoColor=white></a>
-<img src="https://img.shields.io/badge/Paper%201.16.5%2B-blue?style=for-the-badge&logo=spigotmc&logoColor=white&logoSize=auto" alt="Badge">
-<img src="https://img.shields.io/badge/Java%2016%2B-orange?style=for-the-badge&logo=openjdk&logoColor=white&logoSize=auto" alt="Badge">
+<img src="https://img.shields.io/badge/Paper-blue?style=for-the-badge&logo=spigotmc&logoColor=white&logoSize=auto" alt="Badge">
+<img src="https://img.shields.io/badge/Java-orange?style=for-the-badge&logo=openjdk&logoColor=white&logoSize=auto" alt="Badge">
 </p>
 
 REST API for LuckPerms as a Paper plugin.
