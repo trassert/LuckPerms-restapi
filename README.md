@@ -2,17 +2,26 @@
 
 <p align="center">
 <a href=https://t.me/lumintoch><img src=https://img.shields.io/badge/Sponsored%20by-Luminto-purple?style=for-the-badge&logo=githubsponsors&logoColor=white></a>
-<img src="https://img.shields.io/badge/Paper-blue?style=for-the-badge&logo=spigotmc&logoColor=white&logoSize=auto" alt="Badge">
-<img src="https://img.shields.io/badge/Java-orange?style=for-the-badge&logo=openjdk&logoSize=auto" alt="Badge">
+<img src="https://img.shields.io/badge/Paper%201.16.5%2B-blue?style=for-the-badge&logo=spigotmc&logoColor=white&logoSize=auto" alt="Badge">
+<img src="https://img.shields.io/badge/Java%2016%2B-orange?style=for-the-badge&logo=openjdk&logoColor=white&logoSize=auto" alt="Badge">
 </p>
 
 REST API for LuckPerms as a Paper plugin.
+
+## Requirements
+
+| Component | Minimum |
+| --- | --- |
+| Java | 16 |
+| Paper | 1.16.5 |
+| LuckPerms | API 5.5 |
+
 
 ## Installation
 
 1. Build with `mvn package`.
 2. Copy `target/luckperms-rest-api.jar` to the server `plugins` directory.
-3. Make sure LuckPerms is installed.
+3. Make sure LuckPerms (v5.5 API or newer) is installed.
 4. Edit `plugins/LuckPermsRestApi/config.yml` and restart the server.
 
 The API listens on `http://localhost:8080` by default.
